@@ -1,0 +1,6 @@
+{
+  "name": "KKN Logistics Dashboard",
+  "description": "A comprehensive logistics and inventory coordination tracker for KKN programs, allowing users to coordinate physical assets, process item borrowings, request procurements, and manage village events.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
