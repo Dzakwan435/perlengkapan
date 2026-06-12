@@ -12,8 +12,10 @@ import {
   CheckCircle2,
   AlertCircle,
   XCircle,
+  FileDown,
 } from 'lucide-react';
 import { Program, ProgramNeed, InventoryItem } from '../types';
+import { exportProgramsCSV, exportProgramsPDF } from '../lib/export';
 
 interface ProgramsViewProps {
   programs: Program[];
@@ -65,6 +67,7 @@ export default function ProgramsView({
   onDeleteNeed,
 }: ProgramsViewProps) {
   const [expandedId, setExpandedId] = useState<string | null>(programs[0]?.id ?? null);
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -82,13 +85,40 @@ export default function ProgramsView({
           <h1 className="text-lg font-bold text-slate-800">Program Kerja</h1>
           <p className="text-xs text-slate-500">{programs.length} program terdaftar</p>
         </div>
-        <button
-          onClick={onAddProgram}
-          className="flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors"
-        >
-          <Plus size={15} />
-          Tambah
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={onAddProgram}
+            className="flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors"
+          >
+            <Plus size={15} />
+            Tambah
+          </button>
+          <div className="relative">
+            <button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              className="flex items-center gap-1.5 bg-slate-600 text-white px-3 py-2 rounded-xl text-sm font-medium hover:bg-slate-700 transition-colors"
+            >
+              <FileDown size={15} />
+              Export
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-10 min-w-[120px]">
+                <button
+                  onClick={() => { exportProgramsPDF(programs, programNeeds); setShowExportMenu(false); }}
+                  className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  Export PDF
+                </button>
+                <button
+                  onClick={() => { exportProgramsCSV(programs, programNeeds); setShowExportMenu(false); }}
+                  className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  Export CSV
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Programs list */}

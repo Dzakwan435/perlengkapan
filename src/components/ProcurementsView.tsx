@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ShoppingCart,
   Plus,
@@ -11,8 +11,10 @@ import {
   Info,
   Pencil,
   Trash2,
+  FileDown,
 } from 'lucide-react';
 import { Procurement } from '../types';
+import { exportProcurementsCSV, exportProcurementsPDF } from '../lib/export';
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n);
@@ -55,6 +57,7 @@ export default function ProcurementsView({
   onApprove,
   onReject,
 }: ProcurementsViewProps) {
+  const [showExportMenu, setShowExportMenu] = useState(false);
   const totalBudget = procurements.reduce((s, p) => s + p.estimated_price * p.quantity, 0);
   const approvedBudget = procurements
     .filter(p => p.status === 'Disetujui')
@@ -69,13 +72,40 @@ export default function ProcurementsView({
           <h1 className="text-lg font-bold text-slate-800">Pengadaan Barang</h1>
           <p className="text-xs text-slate-500">{procurements.length} permintaan total</p>
         </div>
-        <button
-          onClick={onAddProcurement}
-          className="flex items-center gap-1.5 bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-emerald-700 transition-colors"
-        >
-          <Plus size={15} />
-          Lapor
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={onAddProcurement}
+            className="flex items-center gap-1.5 bg-emerald-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-emerald-700 transition-colors"
+          >
+            <Plus size={15} />
+            Lapor
+          </button>
+          <div className="relative">
+            <button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              className="flex items-center gap-1.5 bg-slate-600 text-white px-3 py-2 rounded-xl text-sm font-medium hover:bg-slate-700 transition-colors"
+            >
+              <FileDown size={15} />
+              Export
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-10 min-w-[120px]">
+                <button
+                  onClick={() => { exportProcurementsPDF(procurements); setShowExportMenu(false); }}
+                  className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  Export PDF
+                </button>
+                <button
+                  onClick={() => { exportProcurementsCSV(procurements); setShowExportMenu(false); }}
+                  className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  Export CSV
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Budget summary */}

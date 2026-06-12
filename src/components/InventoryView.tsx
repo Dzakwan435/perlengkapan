@@ -12,8 +12,10 @@ import {
   Package,
   MapPin,
   Tag,
+  FileDown,
 } from 'lucide-react';
 import { InventoryItem, Borrowing, BorrowingDetail, Program } from '../types';
+import { exportInventoryCSV, exportInventoryPDF } from '../lib/export';
 
 const CATEGORIES = ['Semua', 'Peralatan', 'Elektronik', 'Furnitur', 'Outdoor', 'Audio', 'Kesehatan', 'Aksesoris', 'Lainnya'];
 const CONDITIONS = ['Semua', 'Baik', 'Rusak', 'Hilang'];
@@ -51,6 +53,7 @@ export default function InventoryView({
   const [activeCategory, setActiveCategory] = useState('Semua');
   const [activeCondition, setActiveCondition] = useState('Semua');
   const [showBorrowings, setShowBorrowings] = useState(true);
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   const activeBorrowings = borrowings.filter(b => b.status === 'Dipinjam');
 
@@ -86,6 +89,31 @@ export default function InventoryView({
             <Plus size={15} />
             Tambah
           </button>
+          <div className="relative">
+            <button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              className="flex items-center gap-1.5 bg-slate-600 text-white px-3 py-2 rounded-xl text-sm font-medium hover:bg-slate-700 transition-colors"
+            >
+              <FileDown size={15} />
+              Export
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-10 min-w-[120px]">
+                <button
+                  onClick={() => { exportInventoryPDF(inventory); setShowExportMenu(false); }}
+                  className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  Export PDF
+                </button>
+                <button
+                  onClick={() => { exportInventoryCSV(inventory); setShowExportMenu(false); }}
+                  className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  Export CSV
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

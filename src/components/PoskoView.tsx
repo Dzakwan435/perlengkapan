@@ -10,8 +10,10 @@ import {
   Circle,
   Search,
   StickyNote,
+  FileDown,
 } from 'lucide-react';
 import { PoskoNeed } from '../types';
+import { exportPoskoNeedsCSV, exportPoskoNeedsPDF } from '../lib/export';
 
 interface PoskoViewProps {
   poskoNeeds: PoskoNeed[];
@@ -30,6 +32,7 @@ export default function PoskoView({
 }: PoskoViewProps) {
   const [filter, setFilter] = useState<'Semua' | 'Belum Dibeli' | 'Sudah Dibeli'>('Semua');
   const [search, setSearch] = useState('');
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   const boughtCount = poskoNeeds.filter(p => p.status === 'Sudah Dibeli').length;
   const unboughtCount = poskoNeeds.filter(p => p.status === 'Belum Dibeli').length;
@@ -48,13 +51,40 @@ export default function PoskoView({
           <h1 className="text-lg font-bold text-slate-800">Kebutuhan Posko</h1>
           <p className="text-xs text-slate-500">{poskoNeeds.length} item terdaftar</p>
         </div>
-        <button
-          onClick={onAddNeed}
-          className="flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors"
-        >
-          <Plus size={15} />
-          Tambah
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={onAddNeed}
+            className="flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors"
+          >
+            <Plus size={15} />
+            Tambah
+          </button>
+          <div className="relative">
+            <button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              className="flex items-center gap-1.5 bg-slate-600 text-white px-3 py-2 rounded-xl text-sm font-medium hover:bg-slate-700 transition-colors"
+            >
+              <FileDown size={15} />
+              Export
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-10 min-w-[120px]">
+                <button
+                  onClick={() => { exportPoskoNeedsPDF(poskoNeeds); setShowExportMenu(false); }}
+                  className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  Export PDF
+                </button>
+                <button
+                  onClick={() => { exportPoskoNeedsCSV(poskoNeeds); setShowExportMenu(false); }}
+                  className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  Export CSV
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Progress summary */}
