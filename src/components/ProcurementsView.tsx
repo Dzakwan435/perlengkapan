@@ -12,6 +12,7 @@ import {
   Pencil,
   Trash2,
   FileDown,
+  Search,
 } from 'lucide-react';
 import { Procurement } from '../types';
 import { exportProcurementsCSV, exportProcurementsPDF } from '../lib/export';
@@ -58,6 +59,17 @@ export default function ProcurementsView({
   onReject,
 }: ProcurementsViewProps) {
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredProcurements = procurements.filter(p => {
+    const q = searchQuery.toLowerCase();
+    return (
+      p.item_name.toLowerCase().includes(q) ||
+      p.reason?.toLowerCase().includes(q) ||
+      p.status.toLowerCase().includes(q)
+    );
+  });
+
   const totalBudget = procurements.reduce((s, p) => s + p.estimated_price * p.quantity, 0);
   const approvedBudget = procurements
     .filter(p => p.status === 'Disetujui')
@@ -134,15 +146,37 @@ export default function ProcurementsView({
         </p>
       </div>
 
+      {/* Search */}
+      <div className="relative">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input
+          type="text"
+          placeholder="Cari nama barang, alasan, atau status..."
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
       {/* List */}
-      {procurements.length === 0 ? (
+      {filteredProcurements.length === 0 ? (
         <div className="text-center py-16">
           <ShoppingCart size={44} className="text-slate-300 mx-auto mb-3" />
-          <p className="text-sm text-slate-400">Belum ada permintaan pengadaan</p>
+          <p className="text-sm text-slate-400">
+            {searchQuery ? 'Tidak ada pengadaan yang cocok' : 'Belum ada permintaan pengadaan'}
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
-          {procurements.map(proc => {
+          {filteredProcurements.map(proc => {
             const cfg = statusConfig[proc.status] ?? {
               label: proc.status,
               color: 'border-l-slate-400',
