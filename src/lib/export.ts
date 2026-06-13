@@ -1,10 +1,13 @@
 import type {
   InventoryItem,
+  InventoryCategory,
   Program,
   ProgramNeed,
   PoskoNeed,
   Procurement,
+  Division,
 } from '../types';
+import { resolveCategoryName, resolveDivisionName, resolveProcurementCategoryName } from './supabase';
 
 // ============================================================
 // CSV Helper
@@ -57,38 +60,153 @@ function savePDF(doc: any, filename: string) {
   doc.save(`${filename}.pdf`);
 }
 
+// Helper: aman menambahkan autoTable section baru di bawah yang sebelumnya
+function nextStartY(doc: any, gap = 6): number {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const last = (doc as any).lastAutoTable?.finalY ?? 28;
+  return last + gap;
+}
+
 // ============================================================
 // INVENTORY
 // ============================================================
-export function exportInventoryCSV(items: InventoryItem[]) {
-  const headers = ['Nama Barang', 'Kategori', 'Jumlah', 'Kondisi', 'Lokasi'];
-  const rows = items.map(i => [
-    i.item_name,
-    i.category,
-    String(i.quantity),
-    i.condition,
-    i.storage_location,
-  ]);
-  downloadCSV('inventaris', headers, rows);
-}
-
-export async function exportInventoryPDF(items: InventoryItem[]) {
-  const { autoTable } = await loadPDFLibs();
-  const doc = await createPDF('Data Inventaris');
-  autoTable(doc, {
-    startY: 28,
-    head: [['Nama Barang', 'Kategori', 'Jumlah', 'Kondisi', 'Lokasi']],
-    body: items.map(i => [
+export function exportInventoryCSV(
+  items: InventoryItem[],
+  categories: InventoryCategory[] = [],
+  title: string = 'inventaris'
+) {
+  const headers = ['Kategori', 'Nama Barang', 'Jumlah', 'Kondisi', 'Lokasi'];
+  const rows = [...items]
+    .sort((a, b) => {
+      const ca = resolveCategoryName(a);
+      const cb = resolveCategoryName(b);
+      return ca.localeCompare(cb) || a.item_name.localeCompare(b.item_name);
+    })
+    .map(i => [
+      resolveCategoryName(i),
       i.item_name,
-      i.category,
       String(i.quantity),
       i.condition,
       i.storage_location,
-    ]),
-    styles: { fontSize: 9 },
-    headStyles: { fillColor: [37, 99, 235] },
+    ]);
+  downloadCSV(title, headers, rows);
+}
+
+// PDF inventaris dikelompokkan per kategori dengan subtotal jumlah unit.
+export async function exportInventoryPDF(
+  items: InventoryItem[],
+  categories: InventoryCategory[] = [],
+  title: string = 'Data Inventaris'
+) {
+  const { autoTable } = await loadPDFLibs();
+  const doc = await createPDF(title);
+
+  // Kelompokkan item per kategori
+  const groups = new Map<string, InventoryItem[]>();
+  const groupNameById = new Map<string, string>();
+  categories.forEach(c => groupNameById.set(c.id, c.name));
+
+  const uncategorized: InventoryItem[] = [];
+  items.forEach(item => {
+    if (item.category_id && groupNameById.has(item.category_id)) {
+      const arr = groups.get(item.category_id) ?? [];
+      arr.push(item);
+      groups.set(item.category_id, arr);
+    } else if (item.category_id) {
+      // id ada tapi tidak dikenal (seharusnya tidak terjadi)
+      const arr = groups.get(item.category_id) ?? [];
+      arr.push(item);
+      groups.set(item.category_id, arr);
+    } else {
+      uncategorized.push(item);
+    }
   });
-  savePDF(doc, 'inventaris');
+
+  let startY = 28;
+  let grandQty = 0;
+  let grandTypes = 0;
+
+  // Urutan kategori: sesuai urutan master, baru "Tanpa Kategori" di akhir.
+  const orderedCategoryIds = [
+    ...categories.map(c => c.id),
+    ...Array.from(groups.keys()).filter(id => !categories.some(c => c.id === id)),
+  ];
+
+  for (const catId of orderedCategoryIds) {
+    const list = groups.get(catId);
+    if (!list || list.length === 0) continue;
+    const catName = groupNameById.get(catId) ?? 'Kategori Tidak Dikenal';
+    const subtotalQty = list.reduce((s, i) => s + i.quantity, 0);
+    grandQty += subtotalQty;
+    grandTypes += list.length;
+
+    doc.setFontSize(12);
+    doc.setTextColor(37, 99, 235);
+    doc.text(`Kategori: ${catName}`, 14, startY);
+    doc.setTextColor(0, 0, 0);
+    startY += 3;
+
+    autoTable(doc, {
+      startY,
+      head: [['Nama Barang', 'Jumlah', 'Kondisi', 'Lokasi']],
+      body: list.map(i => [
+        i.item_name,
+        String(i.quantity),
+        i.condition,
+        i.storage_location,
+      ]),
+      foot: [[{ content: `Subtotal ${catName}`, styles: { fontStyle: 'bold' } }, String(subtotalQty), '', '']],
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [37, 99, 235] },
+      footStyles: { fillColor: [241, 245, 249], textColor: [30, 41, 59] },
+    });
+
+    startY = nextStartY(doc, 8);
+  }
+
+  // Tanpa kategori
+  if (uncategorized.length > 0) {
+    const subtotalQty = uncategorized.reduce((s, i) => s + i.quantity, 0);
+    grandQty += subtotalQty;
+    grandTypes += uncategorized.length;
+
+    doc.setFontSize(12);
+    doc.setTextColor(100, 116, 139);
+    doc.text('Tanpa Kategori', 14, startY);
+    doc.setTextColor(0, 0, 0);
+    startY += 3;
+
+    autoTable(doc, {
+      startY,
+      head: [['Nama Barang', 'Jumlah', 'Kondisi', 'Lokasi']],
+      body: uncategorized.map(i => [
+        i.item_name,
+        String(i.quantity),
+        i.condition,
+        i.storage_location,
+      ]),
+      foot: [[{ content: 'Subtotal Tanpa Kategori', styles: { fontStyle: 'bold' } }, String(subtotalQty), '', '']],
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [100, 116, 139] },
+      footStyles: { fillColor: [241, 245, 249], textColor: [30, 41, 59] },
+    });
+    startY = nextStartY(doc, 8);
+  }
+
+  // Grand total
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(
+    `Grand Total: ${grandTypes} jenis barang, ${grandQty} unit`,
+    14,
+    startY + 2
+  );
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(0, 0, 0);
+
+  const fileSlug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  savePDF(doc, fileSlug || 'inventaris');
 }
 
 // ============================================================
@@ -171,39 +289,158 @@ export async function exportPoskoNeedsPDF(needs: PoskoNeed[]) {
 // ============================================================
 // PROCUREMENTS
 // ============================================================
-export function exportProcurementsCSV(procs: Procurement[]) {
-  const headers = ['Nama Barang', 'Jumlah', 'Harga Satuan', 'Total', 'Alasan', 'Status'];
-  const fmt = (n: number) =>
-    new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(n);
-  const rows = procs.map(p => [
-    p.item_name,
-    String(p.quantity),
-    `Rp ${fmt(p.estimated_price)}`,
-    `Rp ${fmt(p.estimated_price * p.quantity)}`,
-    p.reason ?? '',
-    p.status,
-  ]);
-  downloadCSV('pengadaan', headers, rows);
-}
+const fmtIDR = (n: number) =>
+  new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(n);
 
-export async function exportProcurementsPDF(procs: Procurement[]) {
-  const { autoTable } = await loadPDFLibs();
-  const doc = await createPDF('Data Pengadaan Barang');
-  const fmt = (n: number) =>
-    new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(n);
-  autoTable(doc, {
-    startY: 28,
-    head: [['Nama Barang', 'Jumlah', 'Harga Satuan', 'Total', 'Alasan', 'Status']],
-    body: procs.map(p => [
+const typeLabel = (t?: string) =>
+  t === 'posko' ? 'Habis Pakai' : t === 'inventaris' ? 'Inventaris' : '-';
+
+export function exportProcurementsCSV(
+  procs: Procurement[],
+  divisions: Division[] = [],
+  title: string = 'pengadaan'
+) {
+  const headers = ['Tipe', 'Divisi', 'Kategori Tujuan', 'Nama Barang', 'Jumlah', 'Harga Satuan', 'Total', 'Alasan', 'Status'];
+  const rows = [...procs]
+    .sort((a, b) => {
+      const da = resolveDivisionName(a) ?? 'ZZZZ';
+      const db = resolveDivisionName(b) ?? 'ZZZZ';
+      return da.localeCompare(db);
+    })
+    .map(p => [
+      typeLabel(p.procurement_type),
+      resolveDivisionName(p) ?? '(Tanpa Divisi)',
+      resolveProcurementCategoryName(p) ?? '(Tanpa Kategori)',
       p.item_name,
       String(p.quantity),
-      `Rp ${fmt(p.estimated_price)}`,
-      `Rp ${fmt(p.estimated_price * p.quantity)}`,
+      `Rp ${fmtIDR(p.estimated_price)}`,
+      `Rp ${fmtIDR(p.estimated_price * p.quantity)}`,
       p.reason ?? '',
       p.status,
-    ]),
-    styles: { fontSize: 8 },
-    headStyles: { fillColor: [37, 99, 235] },
+    ]);
+  downloadCSV(title, headers, rows);
+}
+
+// PDF pengadaan dikelompokkan per divisi dengan subtotal nominal + Grand Total.
+export async function exportProcurementsPDF(
+  procs: Procurement[],
+  divisions: Division[] = [],
+  title: string = 'Data Pengadaan Barang'
+) {
+  const { autoTable } = await loadPDFLibs();
+  const doc = await createPDF(title);
+
+  const groups = new Map<string, Procurement[]>();
+  const groupNameById = new Map<string, string>();
+  divisions.forEach(d => groupNameById.set(d.id, d.name));
+
+  const noDivision: Procurement[] = [];
+  procs.forEach(p => {
+    if (p.division_id) {
+      const arr = groups.get(p.division_id) ?? [];
+      arr.push(p);
+      groups.set(p.division_id, arr);
+    } else {
+      noDivision.push(p);
+    }
   });
-  savePDF(doc, 'pengadaan');
+
+  let startY = 28;
+  let grandTotal = 0;
+  let grandCount = 0;
+
+  const orderedDivisionIds = [
+    ...divisions.map(d => d.id),
+    ...Array.from(groups.keys()).filter(id => !divisions.some(d => d.id === id)),
+  ];
+
+  for (const divId of orderedDivisionIds) {
+    const list = groups.get(divId);
+    if (!list || list.length === 0) continue;
+    const divName = groupNameById.get(divId) ?? 'Divisi Tidak Dikenal';
+    const subtotal = list.reduce((s, p) => s + p.estimated_price * p.quantity, 0);
+    grandTotal += subtotal;
+    grandCount += list.length;
+
+    doc.setFontSize(12);
+    doc.setTextColor(5, 150, 105);
+    doc.text(`Divisi: ${divName}`, 14, startY);
+    doc.setTextColor(0, 0, 0);
+    startY += 3;
+
+    autoTable(doc, {
+      startY,
+      head: [['Tipe', 'Kategori Tujuan', 'Nama Barang', 'Qty', 'Harga Satuan', 'Total', 'Status']],
+      body: list.map(p => [
+        typeLabel(p.procurement_type),
+        resolveProcurementCategoryName(p) ?? '-',
+        p.item_name,
+        String(p.quantity),
+        `Rp ${fmtIDR(p.estimated_price)}`,
+        `Rp ${fmtIDR(p.estimated_price * p.quantity)}`,
+        p.status,
+      ]),
+      foot: [[
+        { content: `Total Divisi ${divName}`, colSpan: 5, styles: { fontStyle: 'bold', halign: 'right' } },
+        `Rp ${fmtIDR(subtotal)}`,
+        '',
+      ]],
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [5, 150, 105] },
+      footStyles: { fillColor: [236, 253, 245], textColor: [6, 95, 70] },
+    });
+
+    startY = nextStartY(doc, 8);
+  }
+
+  // Tanpa Divisi
+  if (noDivision.length > 0) {
+    const subtotal = noDivision.reduce((s, p) => s + p.estimated_price * p.quantity, 0);
+    grandTotal += subtotal;
+    grandCount += noDivision.length;
+
+    doc.setFontSize(12);
+    doc.setTextColor(100, 116, 139);
+    doc.text('Tanpa Divisi', 14, startY);
+    doc.setTextColor(0, 0, 0);
+    startY += 3;
+
+    autoTable(doc, {
+      startY,
+      head: [['Tipe', 'Kategori Tujuan', 'Nama Barang', 'Qty', 'Harga Satuan', 'Total', 'Status']],
+      body: noDivision.map(p => [
+        typeLabel(p.procurement_type),
+        resolveProcurementCategoryName(p) ?? '-',
+        p.item_name,
+        String(p.quantity),
+        `Rp ${fmtIDR(p.estimated_price)}`,
+        `Rp ${fmtIDR(p.estimated_price * p.quantity)}`,
+        p.status,
+      ]),
+      foot: [[
+        { content: 'Total Tanpa Divisi', colSpan: 5, styles: { fontStyle: 'bold', halign: 'right' } },
+        `Rp ${fmtIDR(subtotal)}`,
+        '',
+      ]],
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [100, 116, 139] },
+      footStyles: { fillColor: [241, 245, 249], textColor: [30, 41, 59] },
+    });
+    startY = nextStartY(doc, 8);
+  }
+
+  // Grand Total
+  doc.setFontSize(13);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(
+    `Grand Total: ${grandCount} item · Rp ${fmtIDR(grandTotal)}`,
+    14,
+    startY + 2
+  );
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(0, 0, 0);
+
+  const fileSlug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  savePDF(doc, fileSlug || 'pengadaan');
 }

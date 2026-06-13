@@ -1,18 +1,19 @@
 import {
   InventoryItem,
+  InventoryCategory,
   Program,
   PoskoNeed,
   ProgramNeed,
   Borrowing,
   BorrowingDetail,
   Procurement,
+  Division,
 } from './types';
 
 export const USER_AVATAR =
   'https://lh3.googleusercontent.com/a/ACg8ocIvle966BZXQ0l_PfrBqeDQcMbMtarMDr25ib_o7TSS1xt7x0U=s96-c';
 
 // ===================== USERS =====================
-// Demo users (client-side only, no real auth)
 export const CURRENT_USER = {
   id: 'user-001',
   full_name: 'Dzakwan Abbas',
@@ -20,12 +21,32 @@ export const CURRENT_USER = {
   role: 'ADMIN' as const,
 };
 
+// ===================== INVENTORY CATEGORIES =====================
+// Default master kategori; ID dibuat stabil agar seed inventory bisa mereferensikannya.
+export const INITIAL_INVENTORY_CATEGORIES: InventoryCategory[] = [
+  { id: 'cat-elektronik', name: 'Elektronik', created_at: new Date().toISOString() },
+  { id: 'cat-perkakas',   name: 'Perkakas',   created_at: new Date().toISOString() },
+  { id: 'cat-kebersihan', name: 'Kebersihan', created_at: new Date().toISOString() },
+  { id: 'cat-kesehatan',  name: 'Kesehatan',  created_at: new Date().toISOString() },
+];
+
+// ===================== DIVISIONS =====================
+export const INITIAL_DIVISIONS: Division[] = [
+  { id: 'div-acara',        name: 'Acara',        created_at: new Date().toISOString() },
+  { id: 'div-bph',          name: 'BPH',          created_at: new Date().toISOString() },
+  { id: 'div-perlengkapan', name: 'Perlengkapan', created_at: new Date().toISOString() },
+  { id: 'div-pdd',          name: 'PDD',          created_at: new Date().toISOString() },
+  { id: 'div-humas',        name: 'Humas',        created_at: new Date().toISOString() },
+];
+
 // ===================== INVENTORY =====================
+// category_id direferensikan ke INITIAL_INVENTORY_CATEGORIES di atas.
 export const INITIAL_INVENTORY: InventoryItem[] = [
   {
     id: 'inv-001',
     item_name: 'Kursi Plastik',
-    category: 'Peralatan',
+    category: 'Perkakas',
+    category_id: 'cat-perkakas',
     quantity: 50,
     condition: 'Baik',
     storage_location: 'Gudang Posko',
@@ -34,7 +55,8 @@ export const INITIAL_INVENTORY: InventoryItem[] = [
   {
     id: 'inv-002',
     item_name: 'Meja Lipat',
-    category: 'Peralatan',
+    category: 'Perkakas',
+    category_id: 'cat-perkakas',
     quantity: 10,
     condition: 'Baik',
     storage_location: 'Gudang Posko',
@@ -44,6 +66,7 @@ export const INITIAL_INVENTORY: InventoryItem[] = [
     id: 'inv-003',
     item_name: 'Speaker',
     category: 'Elektronik',
+    category_id: 'cat-elektronik',
     quantity: 2,
     condition: 'Baik',
     storage_location: 'Gudang Posko',
@@ -53,6 +76,7 @@ export const INITIAL_INVENTORY: InventoryItem[] = [
     id: 'inv-004',
     item_name: 'Microphone',
     category: 'Elektronik',
+    category_id: 'cat-elektronik',
     quantity: 4,
     condition: 'Baik',
     storage_location: 'Gudang Posko',
@@ -62,6 +86,7 @@ export const INITIAL_INVENTORY: InventoryItem[] = [
     id: 'inv-005',
     item_name: 'Kabel Roll',
     category: 'Elektronik',
+    category_id: 'cat-elektronik',
     quantity: 5,
     condition: 'Baik',
     storage_location: 'Gudang Posko',
@@ -169,6 +194,9 @@ export const INITIAL_PROCUREMENTS: Procurement[] = [
     estimated_price: 250000,
     reason: 'Kegiatan Seminar UMKM',
     status: 'Menunggu',
+    division_id: 'div-bph',
+    category_id: 'cat-perkakas',
+    procurement_type: 'inventaris',
     created_at: new Date().toISOString(),
   },
 ];

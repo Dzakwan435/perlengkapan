@@ -18,14 +18,32 @@ export interface Program {
   created_at: string;
 }
 
+// Master kategori inventaris (tabel: inventory_categories)
+export interface InventoryCategory {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+// Master divisi pengadaan (tabel: divisions)
+export interface Division {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
 export interface InventoryItem {
   id: string;
   item_name: string;
-  category: string;
+  category: string | null;       // (legacy) dipertahankan untuk migrasi, jangan dipakai di UI baru
+  category_id: string | null;    // FK -> inventory_categories.id
   quantity: number;
   condition: 'Baik' | 'Rusak' | 'Hilang';
   storage_location: string;
   created_at: string;
+
+  // Joined dari relasi (opsional, ada saat di-select dengan join)
+  categories?: InventoryCategory | null;
 }
 
 export interface PoskoNeed {
@@ -69,6 +87,8 @@ export interface Return {
   created_at: string;
 }
 
+export type ProcurementType = 'inventaris' | 'posko';
+
 export interface Procurement {
   id: string;
   item_name: string;
@@ -76,7 +96,14 @@ export interface Procurement {
   estimated_price: number;
   reason: string;
   status: 'Menunggu' | 'Disetujui' | 'Ditolak';
+  division_id: string | null;    // FK -> divisions.id
+  category_id: string | null;    // FK -> inventory_categories.id (kategori tujuan saat disetujui)
+  procurement_type: ProcurementType; // 'inventaris' -> inventory_items, 'posko' -> posko_needs
   created_at: string;
+
+  // Joined dari relasi (opsional, ada saat di-select dengan join)
+  divisions?: Division | null;
+  categories?: InventoryCategory | null;
 }
 
 // ============================================================
@@ -90,3 +117,13 @@ export interface BorrowingView extends Borrowing {
   program_name: string | null;
   details: (BorrowingDetail & { item_name: string })[];
 }
+
+// Helper: InventoryItem yang sudah di-resolve nama kategorinya
+export type ResolvedInventoryItem = InventoryItem & {
+  category_name: string;
+};
+
+// Helper: Procurement yang sudah di-resolve nama divisinya
+export type ResolvedProcurement = Procurement & {
+  division_name: string | null;
+};

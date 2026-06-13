@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Package,
   ArrowLeftRight,
@@ -11,36 +11,49 @@ import {
   CheckCircle2,
   AlertTriangle,
   PlusCircle,
+  Tags,
+  Users,
+  DollarSign,
 } from 'lucide-react';
 import {
   InventoryItem,
+  InventoryCategory,
   Borrowing,
   BorrowingDetail,
   Program,
   PoskoNeed,
   Procurement,
+  Division,
   TabType,
 } from '../types';
+import { resolveCategoryName, resolveDivisionName } from '../lib/supabase';
 
 interface DashboardViewProps {
   inventory: InventoryItem[];
+  categories: InventoryCategory[];
   borrowings: Borrowing[];
   borrowingDetails: BorrowingDetail[];
   programs: Program[];
   poskoNeeds: PoskoNeed[];
   procurements: Procurement[];
+  divisions: Division[];
   onNavigate: (tab: TabType) => void;
   onOpenBorrow: () => void;
   onOpenProcurement: () => void;
 }
 
+const fmt = (n: number) =>
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n);
+
 export default function DashboardView({
   inventory,
+  categories,
   borrowings,
   borrowingDetails,
   programs,
   poskoNeeds,
   procurements,
+  divisions,
   onNavigate,
   onOpenBorrow,
   onOpenProcurement,
@@ -49,6 +62,11 @@ export default function DashboardView({
   const activeBorrowings = borrowings.filter(b => b.status === 'Dipinjam').length;
   const pendingProcurements = procurements.filter(p => p.status === 'Menunggu').length;
   const poskoUnbought = poskoNeeds.filter(p => p.status === 'Belum Dibeli').length;
+  const poskoBought = poskoNeeds.filter(p => p.status === 'Sudah Dibeli').length;
+  const totalProcurementCost = procurements.reduce(
+    (s, p) => s + p.estimated_price * p.quantity,
+    0
+  );
 
   const upcomingPrograms = [...programs]
     .sort((a, b) => new Date(a.event_date).getTime() - new Date(b.event_date).getTime())
@@ -56,6 +74,45 @@ export default function DashboardView({
 
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  // Statistik inventaris per kategori
+  const perCategory = useMemo(() => {
+    const map: Record<string, { count: number; qty: number }> = {};
+    categories.forEach(c => {
+      map[c.id] = { count: 0, qty: 0 };
+    });
+    let uncategorized = { count: 0, qty: 0 };
+    inventory.forEach(item => {
+      if (item.category_id && map[item.category_id]) {
+        map[item.category_id].count += 1;
+        map[item.category_id].qty += item.quantity;
+      } else {
+        uncategorized.count += 1;
+        uncategorized.qty += item.quantity;
+      }
+    });
+    return { map, uncategorized };
+  }, [inventory, categories]);
+
+  // Statistik pengadaan per divisi
+  const perDivision = useMemo(() => {
+    const map: Record<string, { count: number; total: number }> = {};
+    divisions.forEach(d => {
+      map[d.id] = { count: 0, total: 0 };
+    });
+    let noDiv = { count: 0, total: 0 };
+    procurements.forEach(p => {
+      const cost = p.estimated_price * p.quantity;
+      if (p.division_id && map[p.division_id]) {
+        map[p.division_id].count += 1;
+        map[p.division_id].total += cost;
+      } else {
+        noDiv.count += 1;
+        noDiv.total += cost;
+      }
+    });
+    return { map, noDiv };
+  }, [procurements, divisions]);
 
   const stats = [
     {
@@ -137,6 +194,192 @@ export default function DashboardView({
             Lapor Pengadaan
           </button>
         </div>
+      </div>
+
+      {/* Widget: Inventaris */}
+      <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center">
+              <Package size={16} className="text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-700">Inventaris</h2>
+              <p className="text-[10px] text-slate-400">
+                {inventory.length} jenis barang · {categories.length} kategori · {totalItems} unit
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => onNavigate('inventory')}
+            className="text-xs text-blue-600 font-medium"
+          >
+            Buka
+          </button>
+        </div>
+
+        {categories.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-4">Belum ada kategori</p>
+        ) : (
+          <div className="space-y-1.5">
+            {categories.map(c => {
+              const s = perCategory.map[c.id] ?? { count: 0, qty: 0 };
+              const pct = totalItems ? Math.round((s.qty / totalItems) * 100) : 0;
+              return (
+                <div
+                  key={c.id}
+                  className="flex items-center gap-3 py-1.5 border-b border-slate-50 last:border-0"
+                >
+                  <Tags size={13} className="text-slate-400 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-medium text-slate-700 truncate">{c.name}</p>
+                      <p className="text-xs text-slate-500">
+                        {s.count} jenis · {s.qty} unit
+                      </p>
+                    </div>
+                    <div className="w-full bg-slate-100 rounded-full h-1 mt-1">
+                      <div
+                        className="bg-blue-500 h-1 rounded-full"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {perCategory.uncategorized.count > 0 && (
+              <div className="flex items-center justify-between text-xs pt-1 text-slate-400 italic">
+                <span>Tanpa Kategori</span>
+                <span>
+                  {perCategory.uncategorized.count} jenis · {perCategory.uncategorized.qty} unit
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Widget: Pengadaan */}
+      <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-emerald-50 flex items-center justify-center">
+              <ShoppingCart size={16} className="text-emerald-600" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-700">Pengadaan</h2>
+              <p className="text-[10px] text-slate-400">
+                {procurements.length} permintaan · total {fmt(totalProcurementCost)}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => onNavigate('procurements')}
+            className="text-xs text-blue-600 font-medium"
+          >
+            Buka
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          <div className="bg-slate-50 rounded-xl p-2.5">
+            <div className="flex items-center gap-1.5 text-slate-500">
+              <DollarSign size={12} />
+              <p className="text-[10px] uppercase font-semibold tracking-wide">Total Biaya</p>
+            </div>
+            <p className="text-sm font-bold text-slate-800 mt-0.5">{fmt(totalProcurementCost)}</p>
+          </div>
+          <div className="bg-slate-50 rounded-xl p-2.5">
+            <div className="flex items-center gap-1.5 text-slate-500">
+              <Clock size={12} />
+              <p className="text-[10px] uppercase font-semibold tracking-wide">Menunggu</p>
+            </div>
+            <p className="text-sm font-bold text-amber-600 mt-0.5">{pendingProcurements}</p>
+          </div>
+        </div>
+
+        {divisions.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-2">Belum ada divisi</p>
+        ) : (
+          <div className="space-y-1.5">
+            {divisions.map(d => {
+              const s = perDivision.map[d.id] ?? { count: 0, total: 0 };
+              return (
+                <div
+                  key={d.id}
+                  className="flex items-center justify-between text-xs py-1.5 border-b border-slate-50 last:border-0"
+                >
+                  <div className="flex items-center gap-2">
+                    <Users size={12} className="text-slate-400" />
+                    <span className="text-slate-700 font-medium">{d.name}</span>
+                  </div>
+                  <span className="text-slate-500">
+                    {s.count} · <span className="font-semibold text-slate-700">{fmt(s.total)}</span>
+                  </span>
+                </div>
+              );
+            })}
+            {perDivision.noDiv.count > 0 && (
+              <div className="flex items-center justify-between text-xs py-1.5 text-slate-400 italic">
+                <span>Tanpa Divisi</span>
+                <span>
+                  {perDivision.noDiv.count} · <span className="font-semibold">{fmt(perDivision.noDiv.total)}</span>
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Widget: Posko */}
+      <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-rose-50 flex items-center justify-center">
+              <Home size={16} className="text-rose-600" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-700">Kebutuhan Posko</h2>
+              <p className="text-[10px] text-slate-400">
+                {poskoNeeds.length} item terdaftar
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => onNavigate('posko')}
+            className="text-xs text-blue-600 font-medium"
+          >
+            Buka
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          <div className="bg-slate-50 rounded-xl p-2.5 text-center">
+            <p className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide">Total</p>
+            <p className="text-base font-bold text-slate-800">{poskoNeeds.length}</p>
+          </div>
+          <div className="bg-emerald-50 rounded-xl p-2.5 text-center">
+            <p className="text-[10px] text-emerald-600 uppercase font-semibold tracking-wide">Dibeli</p>
+            <p className="text-base font-bold text-emerald-700">{poskoBought}</p>
+          </div>
+          <div className="bg-rose-50 rounded-xl p-2.5 text-center">
+            <p className="text-[10px] text-rose-600 uppercase font-semibold tracking-wide">Belum</p>
+            <p className="text-base font-bold text-rose-700">{poskoUnbought}</p>
+          </div>
+        </div>
+        {poskoNeeds.length > 0 && (
+          <div className="mt-3">
+            <div className="w-full bg-slate-100 rounded-full h-2">
+              <div
+                className="bg-emerald-500 h-2 rounded-full"
+                style={{
+                  width: `${(poskoBought / poskoNeeds.length) * 100}%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Upcoming Programs */}

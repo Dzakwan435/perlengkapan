@@ -12,12 +12,14 @@ import {
 import {
   TabType,
   InventoryItem,
+  InventoryCategory,
   Program,
   PoskoNeed,
   ProgramNeed,
   Borrowing,
   BorrowingDetail,
   Procurement,
+  Division,
 } from './types';
 import TopBar from './components/TopBar';
 import DashboardView from './components/DashboardView';
@@ -33,6 +35,8 @@ import {
   PoskoNeedModal,
   ProgramNeedModal,
   ReturnModal,
+  CategoryManagerModal,
+  DivisionManagerModal,
 } from './components/Dialogs';
 import * as db from './lib/supabase';
 
@@ -42,6 +46,8 @@ import * as db from './lib/supabase';
 
 export default function App() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [categories, setCategories] = useState<InventoryCategory[]>([]);
+  const [divisions, setDivisions] = useState<Division[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [poskoNeeds, setPoskoNeeds] = useState<PoskoNeed[]>([]);
   const [programNeeds, setProgramNeeds] = useState<ProgramNeed[]>([]);
@@ -63,6 +69,8 @@ export default function App() {
   const [isPoskoNeedOpen, setIsPoskoNeedOpen] = useState(false);
   const [isProgramNeedOpen, setIsProgramNeedOpen] = useState(false);
   const [isReturnOpen, setIsReturnOpen] = useState(false);
+  const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
+  const [isDivisionManagerOpen, setIsDivisionManagerOpen] = useState(false);
 
   // Edit states
   const [editingInventoryItem, setEditingInventoryItem] = useState<InventoryItem | undefined>();
@@ -78,8 +86,10 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const [inv, prog, posko, pn, bor, bd, proc] = await Promise.all([
+      const [inv, cats, divs, prog, posko, pn, bor, bd, proc] = await Promise.all([
         db.fetchInventory(),
+        db.fetchInventoryCategories(),
+        db.fetchDivisions(),
         db.fetchPrograms(),
         db.fetchPoskoNeeds(),
         db.fetchProgramNeeds(),
@@ -88,6 +98,8 @@ export default function App() {
         db.fetchProcurements(),
       ]);
       setInventory(inv);
+      setCategories(cats);
+      setDivisions(divs);
       setPrograms(prog);
       setPoskoNeeds(posko);
       setProgramNeeds(pn);
@@ -127,9 +139,79 @@ export default function App() {
   };
 
   // ============================================================
+  // Category handlers
+  // ============================================================
+  const handleAddCategory = async (name: string) => {
+    const created = await db.insertInventoryCategory(name);
+    setCategories(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+  };
+
+  const handleUpdateCategory = async (id: string, name: string) => {
+    const updated = await db.updateInventoryCategory(id, name);
+    setCategories(prev =>
+      prev.map(c => (c.id === id ? updated : c)).sort((a, b) => a.name.localeCompare(b.name))
+    );
+    // Kategori berubah → nama kategori pada item ikut diperbarui via relasi;
+    // cukup refresh inventaris agar nama ter-join ter-update.
+    try {
+      const refreshed = await db.fetchInventory();
+      setInventory(refreshed);
+    } catch (err) {
+      console.error('refresh inventory after category update failed', err);
+    }
+  };
+
+  const handleDeleteCategory = async (id: string) => {
+    await db.deleteInventoryCategory(id);
+    setCategories(prev => prev.filter(c => c.id !== id));
+    // FK ON DELETE SET NULL → item.category_id akan otomatis null di DB.
+    // Sinkronkan state lokal juga.
+    setInventory(prev =>
+      prev.map(item =>
+        item.category_id === id
+          ? { ...item, category_id: null, categories: null }
+          : item
+      )
+    );
+  };
+
+  // ============================================================
+  // Division handlers
+  // ============================================================
+  const handleAddDivision = async (name: string) => {
+    const created = await db.insertDivision(name);
+    setDivisions(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+  };
+
+  const handleUpdateDivision = async (id: string, name: string) => {
+    const updated = await db.updateDivision(id, name);
+    setDivisions(prev =>
+      prev.map(d => (d.id === id ? updated : d)).sort((a, b) => a.name.localeCompare(b.name))
+    );
+    try {
+      const refreshed = await db.fetchProcurements();
+      setProcurements(refreshed);
+    } catch (err) {
+      console.error('refresh procurements after division update failed', err);
+    }
+  };
+
+  const handleDeleteDivision = async (id: string) => {
+    await db.deleteDivision(id);
+    setDivisions(prev => prev.filter(d => d.id !== id));
+    setProcurements(prev =>
+      prev.map(p =>
+        p.division_id === id ? { ...p, division_id: null, divisions: null } : p
+      )
+    );
+  };
+
+  // ============================================================
   // Inventory handlers
   // ============================================================
-  const handleSaveInventoryItem = (data: Omit<InventoryItem, 'id' | 'created_at'>) =>
+  const handleSaveInventoryItem = (
+    data: Omit<InventoryItem, 'id' | 'created_at' | 'categories'>
+  ) =>
     withMutation(async () => {
       if (editingInventoryItem) {
         const updated = await db.updateInventoryItem(editingInventoryItem.id, data);
@@ -269,7 +351,9 @@ export default function App() {
   // ============================================================
   // Procurement handlers
   // ============================================================
-  const handleSaveProcurement = (data: Omit<Procurement, 'id' | 'status' | 'created_at'>) =>
+  const handleSaveProcurement = (
+    data: Omit<Procurement, 'id' | 'status' | 'created_at' | 'divisions'>
+  ) =>
     withMutation(async () => {
       if (editingProcurement) {
         const updated = await db.updateProcurement(editingProcurement.id, data);
@@ -296,9 +380,39 @@ export default function App() {
       const updated = await db.updateProcurement(id, { status: 'Disetujui' });
       setProcurements(prev => prev.map(p => p.id === id ? updated : p));
 
-      const existing = inventory.find(
-        i => i.item_name.toLowerCase() === proc.item_name.toLowerCase()
-      );
+      if (proc.procurement_type === 'posko') {
+        // Barang habis pakai -> tambahkan ke posko_needs dengan status 'Belum Dibeli'.
+        // Jika nama item sama sudah ada, tambahkan quantity-nya.
+        const existingNeed = poskoNeeds.find(
+          n => n.item_name.toLowerCase() === proc.item_name.toLowerCase()
+        );
+        if (existingNeed) {
+          const updatedNeed = await db.updatePoskoNeed(existingNeed.id, {
+            quantity: existingNeed.quantity + proc.quantity,
+          });
+          setPoskoNeeds(prev => prev.map(n => n.id === existingNeed.id ? updatedNeed : n));
+        } else {
+          const created = await db.insertPoskoNeed({
+            item_name: proc.item_name,
+            quantity: proc.quantity,
+            status: 'Belum Dibeli',
+            notes: proc.reason?.trim()
+              ? `Dari pengadaan${proc.divisions?.name ? ` Divisi ${proc.divisions.name}` : ''}`
+              : null,
+          });
+          setPoskoNeeds(prev => [created, ...prev]);
+        }
+        return;
+      }
+
+      // Barang berulang -> masuk inventaris (default path)
+      const existing = inventory.find(i => {
+        if (i.item_name.toLowerCase() !== proc.item_name.toLowerCase()) return false;
+        const iCat = i.category_id ?? null;
+        const pCat = proc.category_id ?? null;
+        return iCat === pCat;
+      });
+
       if (existing) {
         const updatedItem = await db.updateInventoryItem(existing.id, {
           quantity: existing.quantity + proc.quantity,
@@ -307,7 +421,8 @@ export default function App() {
       } else {
         const newItem = await db.insertInventoryItem({
           item_name: proc.item_name,
-          category: 'Peralatan',
+          category: null,
+          category_id: proc.category_id,
           quantity: proc.quantity,
           condition: 'Baik',
           storage_location: 'Gudang Posko',
@@ -332,6 +447,18 @@ export default function App() {
     { id: 'posko' as TabType, label: 'Posko', icon: Home },
     { id: 'procurements' as TabType, label: 'Pengadaan', icon: ShoppingCart },
   ];
+
+  // Hitung jumlah item per kategori (untuk CategoryManagerModal)
+  const itemCountsByCategoryId = inventory.reduce<Record<string, number>>((acc, item) => {
+    if (item.category_id) acc[item.category_id] = (acc[item.category_id] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  // Hitung jumlah pengadaan per divisi (untuk DivisionManagerModal)
+  const procCountsByDivisionId = procurements.reduce<Record<string, number>>((acc, p) => {
+    if (p.division_id) acc[p.division_id] = (acc[p.division_id] ?? 0) + 1;
+    return acc;
+  }, {});
 
   if (loading) {
     return (
@@ -388,11 +515,13 @@ export default function App() {
         {activeTab === 'dashboard' && (
           <DashboardView
             inventory={inventory}
+            categories={categories}
             borrowings={borrowings}
             borrowingDetails={borrowingDetails}
             programs={programs}
             poskoNeeds={poskoNeeds}
             procurements={procurements}
+            divisions={divisions}
             onNavigate={setActiveTab}
             onOpenBorrow={() => setIsBorrowOpen(true)}
             onOpenProcurement={() => setIsProcurementOpen(true)}
@@ -401,6 +530,7 @@ export default function App() {
         {activeTab === 'inventory' && (
           <InventoryView
             inventory={inventory}
+            categories={categories}
             borrowings={borrowings}
             borrowingDetails={borrowingDetails}
             programs={programs}
@@ -409,6 +539,7 @@ export default function App() {
             onDeleteItem={handleDeleteInventoryItem}
             onOpenBorrow={() => setIsBorrowOpen(true)}
             onReturnBorrowing={(id) => { setReturningBorrowingId(id); setIsReturnOpen(true); }}
+            onManageCategories={() => setIsCategoryManagerOpen(true)}
           />
         )}
         {activeTab === 'programs' && (
@@ -434,11 +565,13 @@ export default function App() {
         {activeTab === 'procurements' && (
           <ProcurementsView
             procurements={procurements}
+            divisions={divisions}
             onAddProcurement={() => { setEditingProcurement(undefined); setIsProcurementOpen(true); }}
             onEdit={(proc) => { setEditingProcurement(proc); setIsProcurementOpen(true); }}
             onDelete={handleDeleteProcurement}
             onApprove={handleApproveProcurement}
             onReject={handleRejectProcurement}
+            onManageDivisions={() => setIsDivisionManagerOpen(true)}
           />
         )}
       </main>
@@ -479,15 +612,33 @@ export default function App() {
       {isProcurementOpen && (
         <ProcurementModal
           editProc={editingProcurement}
+          divisions={divisions}
+          categories={categories}
           onSubmit={handleSaveProcurement}
           onClose={() => { setIsProcurementOpen(false); setEditingProcurement(undefined); }}
+          onOpenDivisionManager={() => {
+            setIsProcurementOpen(false);
+            setEditingProcurement(undefined);
+            setIsDivisionManagerOpen(true);
+          }}
+          onOpenCategoryManager={() => {
+            setIsProcurementOpen(false);
+            setEditingProcurement(undefined);
+            setIsCategoryManagerOpen(true);
+          }}
         />
       )}
       {isInventoryItemOpen && (
         <InventoryItemModal
           editItem={editingInventoryItem}
+          categories={categories}
           onSubmit={handleSaveInventoryItem}
           onClose={() => { setIsInventoryItemOpen(false); setEditingInventoryItem(undefined); }}
+          onOpenCategoryManager={() => {
+            setIsInventoryItemOpen(false);
+            setEditingInventoryItem(undefined);
+            setIsCategoryManagerOpen(true);
+          }}
         />
       )}
       {isProgramOpen && (
@@ -515,6 +666,26 @@ export default function App() {
           borrowingId={returningBorrowingId}
           onSubmit={handleReturnBorrowing}
           onClose={() => { setIsReturnOpen(false); setReturningBorrowingId(null); }}
+        />
+      )}
+      {isCategoryManagerOpen && (
+        <CategoryManagerModal
+          categories={categories}
+          itemCounts={itemCountsByCategoryId}
+          onAdd={handleAddCategory}
+          onUpdate={handleUpdateCategory}
+          onDelete={handleDeleteCategory}
+          onClose={() => setIsCategoryManagerOpen(false)}
+        />
+      )}
+      {isDivisionManagerOpen && (
+        <DivisionManagerModal
+          divisions={divisions}
+          procCounts={procCountsByDivisionId}
+          onAdd={handleAddDivision}
+          onUpdate={handleUpdateDivision}
+          onDelete={handleDeleteDivision}
+          onClose={() => setIsDivisionManagerOpen(false)}
         />
       )}
     </div>
