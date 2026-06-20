@@ -379,10 +379,16 @@ export default function ProcurementsView({
           { id: 'inventaris' as const, label: 'Inventaris', icon: Warehouse, accent: 'blue' },
           { id: 'posko' as const, label: 'Habis Pakai', icon: ShoppingBag, accent: 'rose' },
         ]).map(t => {
+          const divisionFiltered =
+            activeDivisionId === 'ALL'
+              ? procurements
+              : activeDivisionId === '__none__'
+              ? procurements.filter(p => !p.division_id)
+              : procurements.filter(p => p.division_id === activeDivisionId);
           const count =
             t.id === 'ALL'
-              ? procurements.length
-              : procurements.filter(p => p.procurement_type === t.id).length;
+              ? divisionFiltered.length
+              : divisionFiltered.filter(p => p.procurement_type === t.id).length;
           const Icon = t.icon;
           const active = activeType === t.id;
           const activeCls =
